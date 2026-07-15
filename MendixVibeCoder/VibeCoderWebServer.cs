@@ -28,17 +28,17 @@ public class VibeCoderWebServer : WebServerExtension
 
     private static async Task ServeIndex(HttpListenerRequest request, HttpListenerResponse response, CancellationToken ct)
     {
-        await ServeFile(request, response, "wwwroot/index.html", ct);
+        await ServeFile(request, response, "index.html", ct);
     }
 
     private static async Task ServeAppJs(HttpListenerRequest request, HttpListenerResponse response, CancellationToken ct)
     {
-        await ServeFile(request, response, "wwwroot/app.js", ct);
+        await ServeFile(request, response, "app.js", ct);
     }
 
     private static async Task ServeStylesCss(HttpListenerRequest request, HttpListenerResponse response, CancellationToken ct)
     {
-        await ServeFile(request, response, "wwwroot/styles.css", ct);
+        await ServeFile(request, response, "styles.css", ct);
     }
 
     private static async Task ServeFile(HttpListenerRequest request, HttpListenerResponse response, string fileName, CancellationToken ct)

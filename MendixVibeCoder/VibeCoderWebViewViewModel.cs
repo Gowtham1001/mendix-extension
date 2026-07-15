@@ -364,18 +364,27 @@ public class VibeCoderWebViewViewModel : WebViewDockablePaneViewModel
             var modules = project.GetModules();
             foreach (var module in modules)
             {
-                sb.AppendLine(module.Name);
+                sb.AppendLine($"\n## Module: {module.Name}");
 
                 var domainModel = module.DomainModel;
                 var entities = domainModel.GetEntities();
                 if (entities.Any())
                 {
-                    sb.AppendLine($"\n=== ENTITIES IN {module.Name} ===");
+                    sb.AppendLine($"\n### Entities in {module.Name}");
                     foreach (var entity in entities)
                     {
                         var attrs = entity.GetAttributes();
-                        var attrList = string.Join(", ", attrs.Select(a => $"{a.Name}: {a.GetType().Name}"));
+                        var attrList = string.Join(", ", attrs.Select(a => $"{a.Name}: {a.Type}"));
                         sb.AppendLine($"  {entity.Name} ({attrList})");
+
+                        var associations = entity.GetAssociations(Mendix.StudioPro.ExtensionsAPI.Model.DomainModels.AssociationDirection.Both);
+                        foreach (var ea in associations)
+                        {
+                            var assoc = ea.Association;
+                            var type = assoc.Type;
+                            var owner = assoc.Owner;
+                            sb.AppendLine($"    association: {assoc.Name} ({type}, owner={owner})");
+                        }
                     }
                 }
 
@@ -383,7 +392,7 @@ public class VibeCoderWebViewViewModel : WebViewDockablePaneViewModel
                 var microflows = documents.OfType<Mendix.StudioPro.ExtensionsAPI.Model.Microflows.IMicroflow>();
                 if (microflows.Any())
                 {
-                    sb.AppendLine($"\n=== MICROFLOWS IN {module.Name} ===");
+                    sb.AppendLine($"\n### Microflows in {module.Name}");
                     foreach (var mf in microflows)
                     {
                         sb.AppendLine($"  {mf.Name}");
@@ -393,7 +402,7 @@ public class VibeCoderWebViewViewModel : WebViewDockablePaneViewModel
                 var pages = documents.OfType<Mendix.StudioPro.ExtensionsAPI.Model.Pages.IPage>();
                 if (pages.Any())
                 {
-                    sb.AppendLine($"\n=== PAGES IN {module.Name} ===");
+                    sb.AppendLine($"\n### Pages in {module.Name}");
                     foreach (var page in pages)
                     {
                         sb.AppendLine($"  {page.Name}");
@@ -476,12 +485,34 @@ public class VibeCoderWebViewViewModel : WebViewDockablePaneViewModel
     {
         var settings = _settingsManager.Get();
         var maxTokens = settings.MaxHistoryTokens;
+        var removedCount = 0;
 
         while (_chatHistory.Count > 2)
         {
             var totalTokens = _chatHistory.Sum(m => OpenRouterClient.EstimateTokens(m.Content));
             if (totalTokens <= maxTokens) break;
             _chatHistory.RemoveAt(0);
+            removedCount++;
+        }
+
+        if (removedCount > 0)
+        {
+            var droppedMessages = _chatHistory.Take(removedCount).ToList();
+            var summaryParts = new List<string>();
+            foreach (var msg in droppedMessages)
+            {
+                var preview = msg.Content.Length > 120 ? msg.Content[..120] + "..." : msg.Content;
+                summaryParts.Add($"[{msg.Role}]: {preview}");
+            }
+
+            var summary = $"[Earlier conversation summary — {removedCount} message(s) trimmed due to token limit]\n" +
+                          string.Join("\n", summaryParts);
+
+            _chatHistory.Insert(0, new OpenRouterMessage
+            {
+                Role = "system",
+                Content = OpenRouterClient.SUMMARY_PROMPT + "\n\n" + summary
+            });
         }
     }
 

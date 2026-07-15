@@ -20,6 +20,7 @@
 
   <ItemGroup>
     <Content Include="wwwroot\index.html">
+      <Link>index.html</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
   </ItemGroup>

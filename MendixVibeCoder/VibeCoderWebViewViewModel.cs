@@ -36,7 +36,8 @@ public class VibeCoderWebViewViewModel : WebViewDockablePaneViewModel
     public override void InitWebView(IWebView webView)
     {
         _webView = webView;
-        webView.Address = new Uri(_baseUri, "index");
+        var extensionDir = AppDomain.CurrentDomain.BaseDirectory;
+        webView.Address = new Uri("file:///" + Path.Combine(extensionDir, "wwwroot", "index.html").Replace('\\', '/'));
 
         webView.MessageReceived += async (_, args) =>
         {

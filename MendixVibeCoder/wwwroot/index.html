@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline';">
+    <title>Vibe Coder</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- Top Bar -->
+    <div class="topbar">
+        <div class="topbar-left">
+            <span class="logo">Vibe Coder</span>
+            <span id="project-badge" class="badge hidden"></span>
+            <span id="mcp-badge" class="mcp-badge hidden" title="MCP live editing active"></span>
+        </div>
+        <div class="topbar-right">
+            <button id="btn-context" class="icon-btn" title="Refresh Project Context">&#x21bb;</button>
+            <button id="btn-settings" class="icon-btn" title="Settings">&#x2699;</button>
+        </div>
+    </div>
+
+    <!-- Chat View -->
+    <div id="chat-view" class="view active">
+        <div id="chat-messages" class="chat-messages">
+            <div class="welcome-msg">
+                <h2>Mendix Vibe Coder</h2>
+                <p>Describe what you want to build and I'll generate MDL commands to create it in your Mendix project.</p>
+                <p class="hint">Examples:<br>
+                &bull; "Create a Customer entity with Name, Email and IsActive"<br>
+                &bull; "Add a microflow that validates email format"<br>
+                &bull; "Create an overview page for Customer with a data grid"</p>
+            </div>
+        </div>
+        <div class="chat-input-area">
+            <div class="input-wrapper">
+                <textarea id="chat-input" placeholder="Describe what to build..." rows="1"></textarea>
+                <button id="btn-send" class="send-btn" title="Send">&#x27A4;</button>
+                <button id="btn-stop" class="stop-btn hidden" title="Stop">&#x25A0;</button>
+            </div>
+            <div class="input-hints">
+                <span id="sync-status" class="sync-status"></span>
+                <span>Enter to send &middot; Shift+Enter for newline</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- MDL Confirmation Dialog -->
+    <div id="mdl-confirm-overlay" class="mdl-confirm-overlay hidden">
+        <div class="mdl-confirm-dialog">
+            <div class="mdl-confirm-header">
+                <h4>Review MDL Commands</h4>
+                <span id="mdl-confirm-count" class="mdl-confirm-count"></span>
+            </div>
+            <div id="mdl-confirm-commands" class="mdl-confirm-commands"></div>
+            <div class="mdl-confirm-actions">
+                <button id="mdl-confirm-approve" class="btn-primary">Execute All</button>
+                <button id="mdl-confirm-reject" class="btn-secondary">Skip</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings View -->
+    <div id="settings-view" class="view">
+        <div class="settings-content">
+            <h3>Settings</h3>
+
+            <div class="setting-group">
+                <label for="setting-apikey">OpenRouter API Key</label>
+                <input type="password" id="setting-apikey" placeholder="sk-or-...">
+                <button id="btn-test-openrouter" class="btn-sm">Test Connection</button>
+                <span id="openrouter-test-status" class="test-status"></span>
+            </div>
+
+            <div class="setting-group">
+                <label for="setting-model">Model ID</label>
+                <input type="text" id="setting-model" placeholder="anthropic/claude-sonnet-4-20250514">
+                <span class="hint">Any OpenRouter model ID, e.g. openai/gpt-4o, anthropic/claude-sonnet-4-20250514</span>
+            </div>
+
+            <div class="setting-group">
+                <label for="setting-mxcli">mxcli Path</label>
+                <input type="text" id="setting-mxcli" placeholder="mxcli">
+                <button id="btn-test-mxcli" class="btn-sm">Test</button>
+                <span id="mxcli-test-status" class="test-status"></span>
+                <span class="hint">Full path to mxcli binary, or just "mxcli" if in PATH</span>
+            </div>
+
+            <div class="setting-group">
+                <label>
+                    <input type="checkbox" id="setting-autosync"> Auto-sync after changes
+                </label>
+                <span class="hint">Automatically press F4 to refresh Studio Pro after MDL execution</span>
+            </div>
+
+            <div class="setting-group">
+                <label>
+                    <input type="checkbox" id="setting-autocontext"> Auto-fetch project context
+                </label>
+                <span class="hint">Automatically include project structure in AI prompts</span>
+            </div>
+
+            <div class="setting-group">
+                <label>
+                    <input type="checkbox" id="setting-autoexecute" checked> Auto-execute MDL commands
+                </label>
+                <span class="hint">When enabled, MDL commands execute immediately. When disabled, you review them first.</span>
+            </div>
+
+            <div class="setting-group">
+                <label for="setting-syncdelay">Sync Delay (ms)</label>
+                <input type="number" id="setting-syncdelay" min="300" max="5000" step="100" value="800">
+                <span class="hint">Delay before triggering F4 sync (300-5000ms)</span>
+            </div>
+
+            <div class="setting-group">
+                <label for="setting-maxhistory">Max History Tokens</label>
+                <input type="number" id="setting-maxhistory" min="10000" max="200000" step="10000" value="120000">
+                <span class="hint">Maximum token count for chat history (older messages are trimmed)</span>
+            </div>
+
+            <h3>MCP (Live Editing)</h3>
+
+            <div class="setting-group">
+                <label>
+                    <input type="checkbox" id="setting-usemcp" checked> Use MCP for live editing
+                </label>
+                <span class="hint">Routes MDL writes through Studio Pro's MCP server. Changes appear instantly.</span>
+            </div>
+
+            <div class="setting-group">
+                <label for="setting-mcppart">MCP Port</label>
+                <input type="number" id="setting-mcppart" min="1024" max="65535" value="7782">
+                <span class="hint">Studio Pro MCP server port (check Preferences > AI > MCP Server)</span>
+            </div>
+
+            <div class="setting-group">
+                <label for="setting-mcpdial">MCP Dial Address</label>
+                <input type="text" id="setting-mcpdial" placeholder="127.0.0.1" value="127.0.0.1">
+                <span class="hint">TCP address for MCP connection (use host.docker.internal for devcontainers)</span>
+            </div>
+
+            <div class="setting-group">
+                <button id="btn-check-mcp" class="btn-sm">Check MCP Status</button>
+                <span id="mcp-test-status" class="test-status"></span>
+            </div>
+
+            <div class="settings-actions">
+                <button id="btn-save-settings" class="btn-primary">Save Settings</button>
+                <button id="btn-back-chat" class="btn-secondary">Back to Chat</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

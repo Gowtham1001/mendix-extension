@@ -221,9 +221,22 @@ public class OpenRouterClient
             Stream = true
         };
 
+        await foreach (var chunk in StreamChatCoreAsync(request, settings.OpenRouterApiKey, ct))
+        {
+            yield return chunk;
+        }
+    }
+
+    private async IAsyncEnumerable<string> StreamChatCoreAsync(
+        OpenRouterRequest request,
+        string apiKey,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
+    {
         for (var attempt = 0; attempt <= MAX_RETRIES; attempt++)
         {
             HttpResponseMessage? response = null;
+            StreamReader? reader = null;
+            bool success = false;
             try
             {
                 var httpRequest = new HttpRequestMessage(HttpMethod.Post, API_URL)
@@ -233,7 +246,7 @@ public class OpenRouterClient
                         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
                     })
                 };
-                httpRequest.Headers.Add("Authorization", $"Bearer {settings.OpenRouterApiKey}");
+                httpRequest.Headers.Add("Authorization", $"Bearer {apiKey}");
                 httpRequest.Headers.Add("HTTP-Referer", "https://github.com/mendix-vibe-coder");
                 httpRequest.Headers.Add("X-Title", "MendixVibeCoder");
 
@@ -253,48 +266,77 @@ public class OpenRouterClient
 
                 response.EnsureSuccessStatusCode();
 
-                using var stream = await response.Content.ReadAsStreamAsync(ct);
-                using var reader = new StreamReader(stream);
-
-                while (!reader.EndOfStream)
-                {
-                    ct.ThrowIfCancellationRequested();
-
-                    var line = await reader.ReadLineAsync(ct);
-                    if (string.IsNullOrEmpty(line)) continue;
-                    if (!line.StartsWith("data: ")) continue;
-
-                    var data = line[6..];
-                    if (data == "[DONE]") break;
-
-                    try
-                    {
-                        var chunk = JsonSerializer.Deserialize<OpenRouterChunk>(data);
-                        var content = chunk?.Choices?.FirstOrDefault()?.Delta?.Content;
-                        if (!string.IsNullOrEmpty(content))
-                        {
-                            yield return content;
-                        }
-                    }
-                    catch (JsonException)
-                    {
-                    }
-                }
-
-                yield break;
+                var stream = await response.Content.ReadAsStreamAsync(ct);
+                reader = new StreamReader(stream);
+                success = true;
             }
             catch (OperationCanceledException)
             {
+                response?.Dispose();
+                reader?.Dispose();
                 throw;
             }
             catch (Exception) when (attempt < MAX_RETRIES)
             {
+                response?.Dispose();
+                reader?.Dispose();
                 var delay = TimeSpan.FromSeconds(Math.Pow(2, attempt + 1));
                 await Task.Delay(delay, ct);
+                continue;
             }
-            finally
+            catch (Exception)
             {
                 response?.Dispose();
+                reader?.Dispose();
+                yield break;
+            }
+
+            if (success && reader != null)
+            {
+                await foreach (var chunk in ReadStreamChunksAsync(reader, ct))
+                {
+                    yield return chunk;
+                }
+                reader.Dispose();
+                response?.Dispose();
+                yield break;
+            }
+
+            response?.Dispose();
+            reader?.Dispose();
+        }
+    }
+
+    private static async IAsyncEnumerable<string> ReadStreamChunksAsync(
+        StreamReader reader,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
+    {
+        while (true)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            var line = await reader.ReadLineAsync(ct);
+            if (line == null) break;
+            if (string.IsNullOrEmpty(line)) continue;
+            if (!line.StartsWith("data: ")) continue;
+
+            var data = line[6..];
+            if (data == "[DONE]") break;
+
+            OpenRouterChunk? chunk;
+            try
+            {
+                chunk = JsonSerializer.Deserialize<OpenRouterChunk>(data);
+            }
+            catch (JsonException)
+            {
+                continue;
+            }
+
+            var content = chunk?.Choices?.FirstOrDefault()?.Delta?.Content;
+            if (!string.IsNullOrEmpty(content))
+            {
+                yield return content;
             }
         }
     }

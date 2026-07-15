@@ -8,13 +8,15 @@ namespace MendixVibeCoder;
 
 public class VibeCoderWebViewViewModel : WebViewDockablePaneViewModel
 {
+    private readonly Uri _baseUri;
+    private readonly Func<IModel?> _getCurrentApp;
     private readonly SettingsManager _settingsManager;
     private readonly OpenRouterClient _openRouterClient;
     private readonly MxcliRunner _mxcliRunner;
-    private readonly IModel? _currentApp;
     private readonly List<OpenRouterMessage> _chatHistory = new();
     private string? _projectContext;
     private CancellationTokenSource? _streamCts;
+    private IWebView? _webView;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -22,9 +24,10 @@ public class VibeCoderWebViewViewModel : WebViewDockablePaneViewModel
         PropertyNameCaseInsensitive = true
     };
 
-    public VibeCoderWebViewViewModel(IModel? currentApp = null)
+    public VibeCoderWebViewViewModel(Uri baseUri, Func<IModel?> getCurrentApp)
     {
-        _currentApp = currentApp;
+        _baseUri = baseUri;
+        _getCurrentApp = getCurrentApp;
         _settingsManager = new SettingsManager();
         _openRouterClient = new OpenRouterClient(_settingsManager);
         _mxcliRunner = new MxcliRunner(_settingsManager);
@@ -32,17 +35,14 @@ public class VibeCoderWebViewViewModel : WebViewDockablePaneViewModel
 
     public override void InitWebView(IWebView webView)
     {
-        var baseUrl = WebServerBaseUrl;
-        if (baseUrl != null)
-        {
-            webView.Address = new Uri(baseUrl, "wwwroot/index.html");
-        }
+        _webView = webView;
+        webView.Address = new Uri(_baseUri, "index");
 
-        WebViewMessageReceived += async (_, message) =>
+        webView.MessageReceived += async (_, args) =>
         {
             try
             {
-                var doc = JsonDocument.Parse(message);
+                var doc = JsonDocument.Parse(args.Message);
                 var root = doc.RootElement;
                 var type = root.GetProperty("type").GetString() ?? "";
 
@@ -313,9 +313,10 @@ public class VibeCoderWebViewViewModel : WebViewDockablePaneViewModel
 
     private async Task HandleFetchContext()
     {
-        if (_currentApp != null)
+        var currentApp = _getCurrentApp();
+        if (currentApp != null)
         {
-            var context = BuildContextFromModel();
+            var context = BuildContextFromModel(currentApp);
             if (!string.IsNullOrEmpty(context))
             {
                 _projectContext = context;
@@ -352,19 +353,21 @@ public class VibeCoderWebViewViewModel : WebViewDockablePaneViewModel
         }
     }
 
-    private string? BuildContextFromModel()
+    private static string? BuildContextFromModel(IModel currentApp)
     {
         try
         {
             var sb = new StringBuilder();
             sb.AppendLine("=== PROJECT MODULES ===");
 
-            var modules = _currentApp!.Root.GetModules();
+            var project = currentApp.Root;
+            var modules = project.GetModules();
             foreach (var module in modules)
             {
                 sb.AppendLine(module.Name);
 
-                var entities = module.GetDomainModel().GetEntities();
+                var domainModel = module.DomainModel;
+                var entities = domainModel.GetEntities();
                 if (entities.Any())
                 {
                     sb.AppendLine($"\n=== ENTITIES IN {module.Name} ===");
@@ -376,7 +379,8 @@ public class VibeCoderWebViewViewModel : WebViewDockablePaneViewModel
                     }
                 }
 
-                var microflows = module.GetDocuments().OfType<Mendix.StudioPro.ExtensionsAPI.Model.Microflows.IMicroflow>();
+                var documents = module.GetDocuments();
+                var microflows = documents.OfType<Mendix.StudioPro.ExtensionsAPI.Model.Microflows.IMicroflow>();
                 if (microflows.Any())
                 {
                     sb.AppendLine($"\n=== MICROFLOWS IN {module.Name} ===");
@@ -386,7 +390,7 @@ public class VibeCoderWebViewViewModel : WebViewDockablePaneViewModel
                     }
                 }
 
-                var pages = module.GetDocuments().OfType<Mendix.StudioPro.ExtensionsAPI.Model.Pages.IPage>();
+                var pages = documents.OfType<Mendix.StudioPro.ExtensionsAPI.Model.Pages.IPage>();
                 if (pages.Any())
                 {
                     sb.AppendLine($"\n=== PAGES IN {module.Name} ===");
@@ -429,11 +433,12 @@ public class VibeCoderWebViewViewModel : WebViewDockablePaneViewModel
 
     private void HandleDetectProject()
     {
-        if (_currentApp != null)
+        var currentApp = _getCurrentApp();
+        if (currentApp != null)
         {
             try
             {
-                var firstModule = _currentApp.Root.GetModules().FirstOrDefault();
+                var firstModule = currentApp.Root.GetModules().FirstOrDefault();
                 if (firstModule != null)
                 {
                     SendToWeb(new
@@ -570,7 +575,7 @@ public class VibeCoderWebViewViewModel : WebViewDockablePaneViewModel
             {
                 var mprFiles = Directory.GetFiles(mendixDir, "*.mpr", SearchOption.AllDirectories);
                 if (mprFiles.Length > 0)
-                    return mprFiles.OrderByDescending(File.GetLastWriteTime).First().FullName;
+                    return mprFiles.OrderByDescending(File.GetLastWriteTime).First();
             }
 
             var homeDir = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
@@ -583,7 +588,7 @@ public class VibeCoderWebViewViewModel : WebViewDockablePaneViewModel
                 {
                     var files = Directory.GetFiles(dir, "*.mpr", SearchOption.TopDirectoryOnly);
                     if (files.Length > 0)
-                        return files.OrderByDescending(File.GetLastWriteTime).First().FullName;
+                        return files.OrderByDescending(File.GetLastWriteTime).First();
                 }
                 catch
                 {
@@ -600,6 +605,6 @@ public class VibeCoderWebViewViewModel : WebViewDockablePaneViewModel
     private void SendToWeb(object data)
     {
         var json = JsonSerializer.Serialize(data, JsonOptions);
-        PostMessage(json);
+        _webView?.PostMessage(json);
     }
 }

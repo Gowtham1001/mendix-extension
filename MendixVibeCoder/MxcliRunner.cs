@@ -275,7 +275,7 @@ public class MxcliRunner
             process.BeginOutputReadLine();
             process.BeginErrorReadLine();
 
-            await process.StandardInput.WriteAsync(stdin, ct);
+            await process.StandardInput.WriteAsync(stdin.AsMemory(), ct);
             await process.StandardInput.FlushAsync(ct);
             process.StandardInput.Close();
 

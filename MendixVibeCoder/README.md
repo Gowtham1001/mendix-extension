@@ -20,7 +20,7 @@ A Mendix Studio Pro extension that adds an AI-powered chat interface for "vibe c
 ## Prerequisites
 
 1. **Mendix Studio Pro 11.11.0+** with extension development enabled
-2. **.NET 8.0 SDK** (for building)
+2. **.NET 10.0 SDK** (for building)
 3. **[mxcli](https://github.com/mendixlabs/mxcli)** installed and in PATH (or configure path in settings)
 4. **OpenRouter API key** from [openrouter.ai](https://openrouter.ai)
 
@@ -42,7 +42,7 @@ dotnet build
 ## Install
 
 1. Build the project
-2. Copy the entire `bin/Debug/net8.0/` output to your Mendix app directory:
+2. Copy the entire `bin/Debug/net10.0/` output to your Mendix app directory:
    ```
    <your-app>/extensions/MendixVibeCoder/
    ```
@@ -92,7 +92,7 @@ To enable MCP in Studio Pro:
 ```
 MendixVibeCoder/
 ├── manifest.json                    # Extension manifest
-├── MendixVibeCoder.csproj           # .NET 8.0 project
+├── MendixVibeCoder.csproj     # .NET 10.0 project
 ├── VibeCoderMenuExtension.cs        # Menu item
 ├── VibeCoderDockablePane.cs         # Dockable pane
 ├── VibeCoderWebViewViewModel.cs     # WebView + message handling

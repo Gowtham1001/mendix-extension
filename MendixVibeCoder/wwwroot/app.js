@@ -19,6 +19,8 @@
     const welcomeMsg = chatMessages.querySelector('.welcome-msg');
 
     let isStreaming = false;
+    let streamingFinished = false;
+    let pendingRawText = '';
     let pendingMdlCommands = null;
 
     // --- WebView bridge (works in Studio Pro) ---
@@ -49,6 +51,15 @@
 
     function handleCsharpMessage(data) {
         switch (data.type) {
+            case 'aiStart':
+                if (!isStreaming) {
+                    isStreaming = true;
+                    streamingFinished = false;
+                    pendingRawText = '';
+                    if (welcomeMsg) welcomeMsg.remove();
+                    createAssistantMessage();
+                }
+                break;
             case 'aiChunk':
                 handleAiChunk(data.content);
                 break;
@@ -56,7 +67,7 @@
                 handleAiDone(data.content, data.mdlCommandsFound, data.mdlCommands);
                 break;
             case 'streamCancelled':
-                finishStreaming();
+                handleStreamCancelled();
                 break;
             case 'error':
                 showError(data.message);
@@ -124,6 +135,8 @@
     function handleAiChunk(content) {
         if (!isStreaming) {
             isStreaming = true;
+            streamingFinished = false;
+            pendingRawText = '';
             if (welcomeMsg) welcomeMsg.remove();
             createAssistantMessage();
         }
@@ -131,7 +144,11 @@
         const last = chatMessages.querySelector('.message.assistant:last-child');
         if (last) {
             const contentEl = last.querySelector('.message-content') || last;
-            appendMarkdown(contentEl, content);
+            pendingRawText += content;
+            const openFences = (pendingRawText.match(/```/g) || []).length % 2 === 1;
+            if (!openFences) {
+                contentEl.innerHTML = renderMarkdown(pendingRawText);
+            }
         }
 
         scrollToBottom();
@@ -139,16 +156,31 @@
 
     function handleAiDone(content, mdlCount, mdlCommands) {
         const last = chatMessages.querySelector('.message.assistant:last-child');
-        if (last && mdlCount > 0) {
-            const mdlInfo = document.createElement('div');
-            mdlInfo.className = 'mdl-inline-info';
-            mdlInfo.textContent = '[' + mdlCount + ' MDL command' + (mdlCount > 1 ? 's' : '') + ' detected]';
-            last.appendChild(mdlInfo);
+        if (last) {
+            const contentEl = last.querySelector('.message-content') || last;
+            contentEl.innerHTML = renderMarkdown(pendingRawText);
+            if (mdlCount > 0) {
+                const mdlInfo = document.createElement('div');
+                mdlInfo.className = 'mdl-inline-info';
+                mdlInfo.textContent = '[' + mdlCount + ' MDL command' + (mdlCount > 1 ? 's' : '') + ' detected]';
+                last.appendChild(mdlInfo);
+            }
+        }
+        finishStreaming();
+    }
+
+    function handleStreamCancelled() {
+        const last = chatMessages.querySelector('.message.assistant:last-child');
+        if (last) {
+            const contentEl = last.querySelector('.message-content') || last;
+            contentEl.innerHTML = renderMarkdown(pendingRawText);
         }
         finishStreaming();
     }
 
     function finishStreaming() {
+        if (streamingFinished) return;
+        streamingFinished = true;
         isStreaming = false;
         btnSend.classList.remove('hidden');
         btnStop.classList.add('hidden');
@@ -159,10 +191,6 @@
         const div = document.createElement('div');
         div.className = 'message assistant';
         chatMessages.appendChild(div);
-    }
-
-    function appendMarkdown(el, text) {
-        el.innerHTML = el.innerHTML + renderMarkdown(text);
     }
 
     function renderMarkdown(text) {
@@ -182,8 +210,11 @@
         // Italic
         html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
 
-        // Links
-        html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" style="color:#0078d4">$1</a>');
+        // Links (sanitize URLs to prevent javascript: XSS)
+        html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, function (_, text, url) {
+            var safeUrl = url.replace(/^(javascript|data|vbscript):/gi, '#blocked');
+            return '<a href="' + safeUrl + '" target="_blank" rel="noopener" style="color:#0078d4">' + text + '</a>';
+        });
 
         // Newlines
         html = html.replace(/\n/g, '<br>');
@@ -398,7 +429,6 @@
 
     btnStop.addEventListener('click', function () {
         postToCsharp({ type: 'cancelStream' });
-        finishStreaming();
     });
 
     btnSettings.addEventListener('click', function () {

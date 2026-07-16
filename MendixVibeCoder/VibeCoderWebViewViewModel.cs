@@ -15,6 +15,8 @@ public class VibeCoderWebViewViewModel : WebViewDockablePaneViewModel
     private readonly OpenRouterClient _openRouterClient;
     private readonly MxcliRunner _mxcliRunner;
     private readonly List<OpenRouterMessage> _chatHistory = new();
+    private readonly object _chatHistoryLock = new();
+    private readonly object _streamLock = new();
     private string? _projectContext;
     private CancellationTokenSource? _streamCts;
 
@@ -77,7 +79,10 @@ public class VibeCoderWebViewViewModel : WebViewDockablePaneViewModel
                         HandleDetectProject();
                         break;
                     case "cancelStream":
-                        _streamCts?.Cancel();
+                        lock (_streamLock)
+                        {
+                            _streamCts?.Cancel();
+                        }
                         break;
                     case "confirmMdlExecution":
                         await HandleConfirmMdlExecution(root);
@@ -105,24 +110,38 @@ public class VibeCoderWebViewViewModel : WebViewDockablePaneViewModel
     private async Task HandleSendMessage(JsonElement root)
     {
         var userMessage = root.GetProperty("message").GetString() ?? "";
-        _chatHistory.Add(new OpenRouterMessage { Role = "user", Content = userMessage });
+        var aiStartSent = false;
 
-        TrimChatHistory();
+        lock (_chatHistoryLock)
+        {
+            _chatHistory.Add(new OpenRouterMessage { Role = "user", Content = userMessage });
+            TrimChatHistory();
+        }
 
-        _streamCts?.Cancel();
-        _streamCts = new CancellationTokenSource();
-        var ct = _streamCts.Token;
+        CancellationToken ct;
+        lock (_streamLock)
+        {
+            _streamCts?.Cancel();
+            _streamCts?.Dispose();
+            _streamCts = new CancellationTokenSource();
+            ct = _streamCts.Token;
+        }
 
         var assistantContent = new StringBuilder();
         var mdlCommands = new List<string>();
 
         try
         {
+            SendToWeb(new { type = "aiStart" });
+            aiStartSent = true;
+
             await foreach (var chunk in _openRouterClient.StreamChatAsync(_chatHistory, _projectContext, ct))
             {
                 if (chunk.StartsWith("[ERROR]"))
                 {
-                    SendToWeb(new { type = "error", message = chunk });
+                    var errorMsg = chunk.Length > 8 ? chunk[8..] : "Unknown error";
+                    SendToWeb(new { type = "error", message = errorMsg });
+                    SendToWeb(new { type = "aiDone", content = "", mdlCommandsFound = 0, mdlCommands = Array.Empty<string>() });
                     return;
                 }
 
@@ -131,7 +150,18 @@ public class VibeCoderWebViewViewModel : WebViewDockablePaneViewModel
             }
 
             var fullResponse = assistantContent.ToString();
-            _chatHistory.Add(new OpenRouterMessage { Role = "assistant", Content = fullResponse });
+
+            if (string.IsNullOrWhiteSpace(fullResponse))
+            {
+                SendToWeb(new { type = "error", message = "AI returned an empty response. Check your API key and model settings." });
+                SendToWeb(new { type = "aiDone", content = "", mdlCommandsFound = 0, mdlCommands = Array.Empty<string>() });
+                return;
+            }
+
+            lock (_chatHistoryLock)
+            {
+                _chatHistory.Add(new OpenRouterMessage { Role = "assistant", Content = fullResponse });
+            }
 
             mdlCommands = ExtractMdlCommands(fullResponse);
 
@@ -162,11 +192,28 @@ public class VibeCoderWebViewViewModel : WebViewDockablePaneViewModel
         }
         catch (OperationCanceledException)
         {
-            SendToWeb(new { type = "streamCancelled" });
+            if (aiStartSent)
+            {
+                SendToWeb(new { type = "streamCancelled" });
+                SendToWeb(new { type = "aiDone", content = "", mdlCommandsFound = 0, mdlCommands = Array.Empty<string>() });
+            }
         }
         catch (Exception ex)
         {
-            SendToWeb(new { type = "error", message = $"AI request failed: {ex.Message}" });
+            lock (_chatHistoryLock)
+            {
+                _chatHistory.RemoveAll(m => m.Role == "user" && m.Content == userMessage);
+            }
+
+            if (aiStartSent)
+            {
+                SendToWeb(new { type = "error", message = $"AI request failed: {ex.Message}" });
+                SendToWeb(new { type = "aiDone", content = "", mdlCommandsFound = 0, mdlCommands = Array.Empty<string>() });
+            }
+            else
+            {
+                SendToWeb(new { type = "error", message = $"AI request failed: {ex.Message}" });
+            }
         }
     }
 
@@ -186,8 +233,14 @@ public class VibeCoderWebViewViewModel : WebViewDockablePaneViewModel
 
         if (commands.Count > 0)
         {
-            _streamCts ??= new CancellationTokenSource();
-            await ExecuteMdlCommands(commands, _streamCts.Token);
+            CancellationToken ct;
+            lock (_streamLock)
+            {
+                _streamCts?.Dispose();
+                _streamCts = new CancellationTokenSource();
+                ct = _streamCts.Token;
+            }
+            await ExecuteMdlCommands(commands, ct);
         }
     }
 
@@ -497,27 +550,30 @@ public class VibeCoderWebViewViewModel : WebViewDockablePaneViewModel
     {
         var settings = _settingsManager.Get();
         var maxTokens = settings.MaxHistoryTokens;
-        var removedCount = 0;
+        var removedMessages = new List<OpenRouterMessage>();
 
         while (_chatHistory.Count > 2)
         {
             var totalTokens = _chatHistory.Sum(m => OpenRouterClient.EstimateTokens(m.Content));
             if (totalTokens <= maxTokens) break;
-            _chatHistory.RemoveAt(0);
-            removedCount++;
+
+            var removeIndex = _chatHistory.FindIndex(m => m.Role != "system");
+            if (removeIndex < 0 || removeIndex >= _chatHistory.Count - 2) break;
+
+            removedMessages.Add(_chatHistory[removeIndex]);
+            _chatHistory.RemoveAt(removeIndex);
         }
 
-        if (removedCount > 0)
+        if (removedMessages.Count > 0)
         {
-            var droppedMessages = _chatHistory.Take(removedCount).ToList();
             var summaryParts = new List<string>();
-            foreach (var msg in droppedMessages)
+            foreach (var msg in removedMessages)
             {
                 var preview = msg.Content.Length > 120 ? msg.Content[..120] + "..." : msg.Content;
                 summaryParts.Add($"[{msg.Role}]: {preview}");
             }
 
-            var summary = $"[Earlier conversation summary — {removedCount} message(s) trimmed due to token limit]\n" +
+            var summary = $"[Earlier conversation summary — {removedMessages.Count} message(s) trimmed due to token limit]\n" +
                           string.Join("\n", summaryParts);
 
             _chatHistory.Insert(0, new OpenRouterMessage

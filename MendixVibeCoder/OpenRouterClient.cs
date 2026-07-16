@@ -28,14 +28,26 @@ public class OpenRouterRequest
     [JsonPropertyName("temperature")]
     public double Temperature { get; set; } = 0.1;
 
-    [JsonPropertyName("max_tokens")]
-    public int MaxTokens { get; set; } = 8192;
+    [JsonPropertyName("max_completion_tokens")]
+    public int MaxCompletionTokens { get; set; } = 8192;
 }
 
 public class OpenRouterChunk
 {
     [JsonPropertyName("choices")]
     public List<OpenRouterChoice>? Choices { get; set; }
+
+    [JsonPropertyName("error")]
+    public OpenRouterError? Error { get; set; }
+}
+
+public class OpenRouterError
+{
+    [JsonPropertyName("code")]
+    public object? Code { get; set; }
+
+    [JsonPropertyName("message")]
+    public string? Message { get; set; }
 }
 
 public class OpenRouterChoice
@@ -342,78 +354,128 @@ public class OpenRouterClient
     {
         for (var attempt = 0; attempt <= MAX_RETRIES; attempt++)
         {
-            HttpResponseMessage? response = null;
-            StreamReader? reader = null;
-            bool success = false;
-            try
+            var result = await SendStreamingRequestAsync(request, apiKey, ct);
+
+            if (result.ErrorMessage != null)
             {
-                var httpRequest = new HttpRequestMessage(HttpMethod.Post, API_URL)
+                if (result.ShouldRetry && attempt < MAX_RETRIES)
                 {
-                    Content = JsonContent.Create(request, options: new JsonSerializerOptions
-                    {
-                        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-                    })
-                };
-                httpRequest.Headers.Add("Authorization", $"Bearer {apiKey}");
-                httpRequest.Headers.Add("HTTP-Referer", "https://github.com/mendix-vibe-coder");
-                httpRequest.Headers.Add("X-Title", "MendixVibeCoder");
+                    var delay = TimeSpan.FromSeconds(Math.Pow(2, attempt + 1));
+                    await Task.Delay(delay, ct);
+                    continue;
+                }
+                yield return $"[ERROR] {result.ErrorMessage}";
+                yield break;
+            }
 
-                response = await HttpClient.SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead, ct);
-
-                if (response.StatusCode == System.Net.HttpStatusCode.TooManyRequests ||
-                    response.StatusCode == System.Net.HttpStatusCode.BadGateway ||
-                    response.StatusCode == System.Net.HttpStatusCode.ServiceUnavailable)
+            if (result.Reader != null)
+            {
+                try
                 {
-                    if (attempt < MAX_RETRIES)
+                    await foreach (var chunk in ReadStreamChunksAsync(result.Reader, ct))
                     {
-                        var delay = TimeSpan.FromSeconds(Math.Pow(2, attempt + 1));
-                        await Task.Delay(delay, ct);
-                        continue;
+                        yield return chunk;
                     }
                 }
-
-                response.EnsureSuccessStatusCode();
-
-                var stream = await response.Content.ReadAsStreamAsync(ct);
-                reader = new StreamReader(stream);
-                success = true;
-            }
-            catch (OperationCanceledException)
-            {
-                response?.Dispose();
-                reader?.Dispose();
-                throw;
-            }
-            catch (Exception) when (attempt < MAX_RETRIES)
-            {
-                response?.Dispose();
-                reader?.Dispose();
-                var delay = TimeSpan.FromSeconds(Math.Pow(2, attempt + 1));
-                await Task.Delay(delay, ct);
-                continue;
-            }
-            catch (Exception)
-            {
-                response?.Dispose();
-                reader?.Dispose();
-                yield break;
-            }
-
-            if (success && reader != null)
-            {
-                await foreach (var chunk in ReadStreamChunksAsync(reader, ct))
+                finally
                 {
-                    yield return chunk;
+                    result.Reader.Dispose();
+                    result.Response?.Dispose();
                 }
-                reader.Dispose();
-                response?.Dispose();
                 yield break;
             }
 
-            response?.Dispose();
-            reader?.Dispose();
+            result.Response?.Dispose();
         }
     }
+
+    private async Task<StreamingRequestResult> SendStreamingRequestAsync(
+        OpenRouterRequest request,
+        string apiKey,
+        CancellationToken ct)
+    {
+        HttpResponseMessage? response = null;
+        StreamReader? reader = null;
+        try
+        {
+            using var httpRequest = new HttpRequestMessage(HttpMethod.Post, API_URL)
+            {
+                Content = JsonContent.Create(request)
+            };
+            httpRequest.Headers.Add("Authorization", $"Bearer {apiKey}");
+            httpRequest.Headers.Add("HTTP-Referer", "https://github.com/mendix-vibe-coder");
+            httpRequest.Headers.Add("X-Title", "MendixVibeCoder");
+
+            response = await HttpClient.SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead, ct);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var statusCode = response.StatusCode;
+                var errorBody = await response.Content.ReadAsStringAsync(ct);
+                var errorMsg = ExtractErrorMessage(errorBody, statusCode);
+                response.Dispose();
+                return new StreamingRequestResult
+                {
+                    ErrorMessage = errorMsg,
+                    ShouldRetry = IsRetryable(statusCode)
+                };
+            }
+
+            var stream = await response.Content.ReadAsStreamAsync(ct);
+            reader = new StreamReader(stream);
+            return new StreamingRequestResult { Response = response, Reader = reader };
+        }
+        catch (OperationCanceledException)
+        {
+            response?.Dispose();
+            reader?.Dispose();
+            throw;
+        }
+        catch (HttpRequestException ex)
+        {
+            response?.Dispose();
+            reader?.Dispose();
+            return new StreamingRequestResult { ErrorMessage = $"Connection failed: {ex.Message}" };
+        }
+        catch (Exception ex)
+        {
+            response?.Dispose();
+            reader?.Dispose();
+            return new StreamingRequestResult { ErrorMessage = $"Unexpected error: {ex.Message}" };
+        }
+    }
+
+    private class StreamingRequestResult
+    {
+        public HttpResponseMessage? Response { get; set; }
+        public StreamReader? Reader { get; set; }
+        public string? ErrorMessage { get; set; }
+        public bool ShouldRetry { get; set; }
+    }
+
+    private static string ExtractErrorMessage(string body, System.Net.HttpStatusCode status)
+    {
+        try
+        {
+            var doc = JsonDocument.Parse(body);
+            if (doc.RootElement.TryGetProperty("error", out var error))
+            {
+                if (error.TryGetProperty("message", out var msg))
+                {
+                    var message = msg.GetString();
+                    if (!string.IsNullOrEmpty(message))
+                        return message;
+                }
+            }
+        }
+        catch { }
+        return $"HTTP {(int)status} {status}";
+    }
+
+    private static bool IsRetryable(System.Net.HttpStatusCode status) =>
+        status is System.Net.HttpStatusCode.TooManyRequests
+            or System.Net.HttpStatusCode.BadGateway
+            or System.Net.HttpStatusCode.ServiceUnavailable;
 
     private static async IAsyncEnumerable<string> ReadStreamChunksAsync(
         StreamReader reader,
@@ -439,6 +501,13 @@ public class OpenRouterClient
             catch (JsonException)
             {
                 continue;
+            }
+
+            if (chunk?.Error != null)
+            {
+                var errMsg = chunk.Error.Message ?? chunk.Error.Code?.ToString() ?? "Unknown stream error";
+                yield return $"[ERROR] Stream error: {errMsg}";
+                yield break;
             }
 
             var content = chunk?.Choices?.FirstOrDefault()?.Delta?.Content;

@@ -24,10 +24,10 @@
     let pendingMdlCommands = null;
 
     // --- WebView bridge (works in Studio Pro) ---
-    function postToCsharp(data) {
+    function postMessage(message, data) {
         try {
             if (window.chrome && window.chrome.webview && window.chrome.webview.postMessage) {
-                window.chrome.webview.postMessage(JSON.stringify(data));
+                window.chrome.webview.postMessage({ message, data });
             }
         } catch (e) { /* extension not active */ }
     }
@@ -251,7 +251,7 @@
         btnSend.classList.add('hidden');
         btnStop.classList.remove('hidden');
 
-        postToCsharp({ type: 'sendMessage', message: text });
+        postMessage('sendMessage', { message: text });
     }
 
     // --- MDL Inline Display ---
@@ -315,17 +315,13 @@
 
     $('#mdl-confirm-approve').addEventListener('click', function () {
         if (pendingMdlCommands) {
-            postToCsharp({
-                type: 'confirmMdlExecution',
-                approved: true,
-                commands: pendingMdlCommands
-            });
+            postMessage('confirmMdlExecution', { approved: true, commands: pendingMdlCommands });
         }
         closeMdlDialog();
     });
 
     $('#mdl-confirm-reject').addEventListener('click', function () {
-        postToCsharp({ type: 'confirmMdlExecution', approved: false, commands: [] });
+        postMessage('confirmMdlExecution', { approved: false, commands: [] });
         closeMdlDialog();
     });
 
@@ -381,8 +377,7 @@
     }
 
     function saveSettings() {
-        postToCsharp({
-            type: 'saveSettings',
+        postMessage('saveSettings', {
             settings: {
                 openRouterApiKey: $('#setting-apikey').value,
                 modelId: $('#setting-model').value,
@@ -428,11 +423,11 @@
     });
 
     btnStop.addEventListener('click', function () {
-        postToCsharp({ type: 'cancelStream' });
+        postMessage('cancelStream', null);
     });
 
     btnSettings.addEventListener('click', function () {
-        postToCsharp({ type: 'getSettings' });
+        postMessage('getSettings', null);
         showView('#settings-view');
     });
 
@@ -446,25 +441,25 @@
 
     btnTestMxcli.addEventListener('click', function () {
         showTestStatus('#mxcli-test-status', null, 'Testing...', true);
-        postToCsharp({ type: 'testMxcli' });
+        postMessage('testMxcli', null);
     });
 
     btnTestOpenRouter.addEventListener('click', function () {
         showTestStatus('#openrouter-test-status', null, 'Testing...', true);
-        postToCsharp({ type: 'testOpenRouter' });
+        postMessage('testOpenRouter', null);
     });
 
     btnCheckMcp.addEventListener('click', function () {
         showTestStatus('#mcp-test-status', null, 'Checking...', true);
-        postToCsharp({ type: 'checkMcp' });
+        postMessage('checkMcp', null);
     });
 
     btnContext.addEventListener('click', function () {
-        postToCsharp({ type: 'fetchContext' });
+        postMessage('fetchContext', null);
     });
 
     // --- Init ---
-    window.addEventListener('message', onMessage);
-    postToCsharp({ type: 'detectProject' });
-    postToCsharp({ type: 'checkMcp' });
+    window.chrome.webview.addEventListener('message', onMessage);
+    postMessage('detectProject', null);
+    postMessage('checkMcp', null);
 })();

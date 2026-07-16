@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Mendix.StudioPro.ExtensionsAPI.Model;
 using Mendix.StudioPro.ExtensionsAPI.UI.DockablePane;
 using Mendix.StudioPro.ExtensionsAPI.UI.WebView;
@@ -48,20 +49,18 @@ public class VibeCoderWebViewViewModel : WebViewDockablePaneViewModel
         {
             try
             {
-                var doc = JsonDocument.Parse(args.Message);
-                var root = doc.RootElement;
-                var type = root.GetProperty("type").GetString() ?? "";
+                var message = args.Message;
 
-                switch (type)
+                switch (message)
                 {
                     case "sendMessage":
-                        await HandleSendMessage(root);
+                        await HandleSendMessage(args.Data);
                         break;
                     case "getSettings":
                         HandleGetSettings();
                         break;
                     case "saveSettings":
-                        HandleSaveSettings(root);
+                        HandleSaveSettings(args.Data);
                         break;
                     case "testMxcli":
                         await HandleTestMxcli();
@@ -73,7 +72,7 @@ public class VibeCoderWebViewViewModel : WebViewDockablePaneViewModel
                         await HandleFetchContext();
                         break;
                     case "executeMdl":
-                        await HandleExecuteMdl(root);
+                        await HandleExecuteMdl(args.Data);
                         break;
                     case "detectProject":
                         HandleDetectProject();
@@ -85,7 +84,7 @@ public class VibeCoderWebViewViewModel : WebViewDockablePaneViewModel
                         }
                         break;
                     case "confirmMdlExecution":
-                        await HandleConfirmMdlExecution(root);
+                        await HandleConfirmMdlExecution(args.Data);
                         break;
                     case "checkMcp":
                         await HandleCheckMcp();
@@ -107,9 +106,9 @@ public class VibeCoderWebViewViewModel : WebViewDockablePaneViewModel
         }
     }
 
-    private async Task HandleSendMessage(JsonElement root)
+    private async Task HandleSendMessage(JsonObject? data)
     {
-        var userMessage = root.GetProperty("message").GetString() ?? "";
+        var userMessage = data?["message"]?.GetValue<string>() ?? "";
         var aiStartSent = false;
 
         lock (_chatHistoryLock)
@@ -217,18 +216,21 @@ public class VibeCoderWebViewViewModel : WebViewDockablePaneViewModel
         }
     }
 
-    private async Task HandleConfirmMdlExecution(JsonElement root)
+    private async Task HandleConfirmMdlExecution(JsonObject? data)
     {
-        var approved = root.GetProperty("approved").GetBoolean();
+        var approved = data?["approved"]?.GetValue<bool>() ?? false;
         if (!approved) return;
 
-        var commandsArray = root.GetProperty("commands");
+        var commandsArray = data?["commands"]?.AsArray();
         var commands = new List<string>();
-        foreach (var cmd in commandsArray.EnumerateArray())
+        if (commandsArray != null)
         {
-            var cmdStr = cmd.GetString();
-            if (!string.IsNullOrWhiteSpace(cmdStr))
-                commands.Add(cmdStr);
+            foreach (var cmd in commandsArray)
+            {
+                var cmdStr = cmd?.GetValue<string>();
+                if (!string.IsNullOrWhiteSpace(cmdStr))
+                    commands.Add(cmdStr);
+            }
         }
 
         if (commands.Count > 0)
@@ -308,33 +310,35 @@ public class VibeCoderWebViewViewModel : WebViewDockablePaneViewModel
         });
     }
 
-    private void HandleSaveSettings(JsonElement root)
+    private void HandleSaveSettings(JsonObject? data)
     {
-        var settings = root.GetProperty("settings");
+        var settings = data?["settings"]?.AsObject();
+        if (settings == null) return;
+
         _settingsManager.Update(s =>
         {
-            if (settings.TryGetProperty("openRouterApiKey", out var v))
-                s.OpenRouterApiKey = v.GetString() ?? "";
-            if (settings.TryGetProperty("modelId", out v))
-                s.ModelId = v.GetString() ?? "anthropic/claude-sonnet-4-20250514";
-            if (settings.TryGetProperty("mxcliPath", out v))
-                s.MxcliPath = v.GetString() ?? "mxcli";
-            if (settings.TryGetProperty("autoSync", out v))
-                s.AutoSync = v.GetBoolean();
-            if (settings.TryGetProperty("autoFetchContext", out v))
-                s.AutoFetchContext = v.GetBoolean();
-            if (settings.TryGetProperty("syncDelayMs", out v))
-                s.SyncDelayMs = v.GetInt32();
-            if (settings.TryGetProperty("autoExecuteMdl", out v))
-                s.AutoExecuteMdl = v.GetBoolean();
-            if (settings.TryGetProperty("maxHistoryTokens", out v))
-                s.MaxHistoryTokens = v.GetInt32();
-            if (settings.TryGetProperty("useMcp", out v))
-                s.UseMcp = v.GetBoolean();
-            if (settings.TryGetProperty("mcpPort", out v))
-                s.McpPort = v.GetInt32();
-            if (settings.TryGetProperty("mcpDialAddress", out v))
-                s.McpDialAddress = v.GetString() ?? "127.0.0.1";
+            if (settings["openRouterApiKey"] != null)
+                s.OpenRouterApiKey = settings["openRouterApiKey"]!.GetValue<string>() ?? "";
+            if (settings["modelId"] != null)
+                s.ModelId = settings["modelId"]!.GetValue<string>() ?? "anthropic/claude-sonnet-4-20250514";
+            if (settings["mxcliPath"] != null)
+                s.MxcliPath = settings["mxcliPath"]!.GetValue<string>() ?? "mxcli";
+            if (settings["autoSync"] != null)
+                s.AutoSync = settings["autoSync"]!.GetValue<bool>();
+            if (settings["autoFetchContext"] != null)
+                s.AutoFetchContext = settings["autoFetchContext"]!.GetValue<bool>();
+            if (settings["syncDelayMs"] != null)
+                s.SyncDelayMs = settings["syncDelayMs"]!.GetValue<int>();
+            if (settings["autoExecuteMdl"] != null)
+                s.AutoExecuteMdl = settings["autoExecuteMdl"]!.GetValue<bool>();
+            if (settings["maxHistoryTokens"] != null)
+                s.MaxHistoryTokens = settings["maxHistoryTokens"]!.GetValue<int>();
+            if (settings["useMcp"] != null)
+                s.UseMcp = settings["useMcp"]!.GetValue<bool>();
+            if (settings["mcpPort"] != null)
+                s.McpPort = settings["mcpPort"]!.GetValue<int>();
+            if (settings["mcpDialAddress"] != null)
+                s.McpDialAddress = settings["mcpDialAddress"]!.GetValue<string>() ?? "127.0.0.1";
         });
 
         _mxcliRunner.ResetMcpCache();
@@ -483,9 +487,9 @@ public class VibeCoderWebViewViewModel : WebViewDockablePaneViewModel
         }
     }
 
-    private async Task HandleExecuteMdl(JsonElement root)
+    private async Task HandleExecuteMdl(JsonObject? data)
     {
-        var command = root.GetProperty("command").GetString() ?? "";
+        var command = data?["command"]?.GetValue<string>() ?? "";
         SendToWeb(new { type = "mdlExecuting", command });
 
         var result = await _mxcliRunner.RunMdlAsync(command);

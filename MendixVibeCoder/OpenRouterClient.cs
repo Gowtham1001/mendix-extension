@@ -28,8 +28,8 @@ public class OpenRouterRequest
     [JsonPropertyName("temperature")]
     public double Temperature { get; set; } = 0.1;
 
-    [JsonPropertyName("max_completion_tokens")]
-    public int MaxCompletionTokens { get; set; } = 8192;
+    [JsonPropertyName("max_tokens")]
+    public int MaxTokens { get; set; } = 8192;
 }
 
 public class OpenRouterChunk

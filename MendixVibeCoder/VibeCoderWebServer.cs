@@ -1,5 +1,6 @@
 using System.ComponentModel.Composition;
 using System.Net;
+using Mendix.StudioPro.ExtensionsAPI.Services;
 using Mendix.StudioPro.ExtensionsAPI.UI.WebServer;
 
 namespace MendixVibeCoder;
@@ -7,6 +8,8 @@ namespace MendixVibeCoder;
 [Export(typeof(WebServerExtension))]
 public class VibeCoderWebServer : WebServerExtension
 {
+    private readonly IExtensionFileService _extensionFileService;
+
     private static readonly Dictionary<string, string> MimeTypes = new()
     {
         [".html"] = "text/html",
@@ -19,6 +22,12 @@ public class VibeCoderWebServer : WebServerExtension
         [".ico"] = "image/x-icon"
     };
 
+    [ImportingConstructor]
+    public VibeCoderWebServer(IExtensionFileService extensionFileService)
+    {
+        _extensionFileService = extensionFileService;
+    }
+
     public override void InitializeWebServer(IWebServer webServer)
     {
         webServer.AddRoute("index", ServeIndex);
@@ -26,44 +35,48 @@ public class VibeCoderWebServer : WebServerExtension
         webServer.AddRoute("styles.css", ServeStylesCss);
     }
 
-    private static async Task ServeIndex(HttpListenerRequest request, HttpListenerResponse response, CancellationToken ct)
+    private async Task ServeIndex(HttpListenerRequest request, HttpListenerResponse response, CancellationToken ct)
     {
-        await ServeFile(request, response, "index.html", ct);
+        await ServeFile(response, "index.html", ct);
     }
 
-    private static async Task ServeAppJs(HttpListenerRequest request, HttpListenerResponse response, CancellationToken ct)
+    private async Task ServeAppJs(HttpListenerRequest request, HttpListenerResponse response, CancellationToken ct)
     {
-        await ServeFile(request, response, "app.js", ct);
+        await ServeFile(response, "app.js", ct);
     }
 
-    private static async Task ServeStylesCss(HttpListenerRequest request, HttpListenerResponse response, CancellationToken ct)
+    private async Task ServeStylesCss(HttpListenerRequest request, HttpListenerResponse response, CancellationToken ct)
     {
-        await ServeFile(request, response, "styles.css", ct);
+        await ServeFile(response, "styles.css", ct);
     }
 
-    private static async Task ServeFile(HttpListenerRequest request, HttpListenerResponse response, string fileName, CancellationToken ct)
+    private async Task ServeFile(HttpListenerResponse response, string fileName, CancellationToken ct)
     {
         try
         {
-            var extensionDir = AppDomain.CurrentDomain.BaseDirectory;
-            var filePath = Path.Combine(extensionDir, fileName);
+            var filePath = _extensionFileService.ResolvePath("wwwroot", fileName);
 
             if (!File.Exists(filePath))
             {
                 response.StatusCode = (int)HttpStatusCode.NotFound;
+                response.Close();
                 return;
             }
 
             var ext = Path.GetExtension(fileName).ToLowerInvariant();
             response.ContentType = MimeTypes.TryGetValue(ext, out var mime) ? mime : "application/octet-stream";
+            response.StatusCode = (int)HttpStatusCode.OK;
+            response.AddHeader("Access-Control-Allow-Origin", "*");
 
             var content = await File.ReadAllBytesAsync(filePath, ct);
             response.ContentLength64 = content.Length;
             await response.OutputStream.WriteAsync(content, ct);
+            response.Close();
         }
         catch (Exception)
         {
             response.StatusCode = (int)HttpStatusCode.InternalServerError;
+            response.Close();
         }
     }
 }

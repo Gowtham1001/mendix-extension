@@ -8,15 +8,15 @@ namespace MendixVibeCoder;
 
 public class VibeCoderWebViewViewModel : WebViewDockablePaneViewModel
 {
-    private readonly Uri _baseUri;
+    private readonly Uri? _baseUri;
     private readonly Func<IModel?> _getCurrentApp;
+    private IWebView? _webView;
     private readonly SettingsManager _settingsManager;
     private readonly OpenRouterClient _openRouterClient;
     private readonly MxcliRunner _mxcliRunner;
     private readonly List<OpenRouterMessage> _chatHistory = new();
     private string? _projectContext;
     private CancellationTokenSource? _streamCts;
-    private IWebView? _webView;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -36,7 +36,11 @@ public class VibeCoderWebViewViewModel : WebViewDockablePaneViewModel
     public override void InitWebView(IWebView webView)
     {
         _webView = webView;
-        webView.Address = new Uri(_baseUri + "index");
+
+        if (_baseUri != null)
+        {
+            webView.Address = new Uri(_baseUri, "index");
+        }
 
         webView.MessageReceived += async (_, args) =>
         {
@@ -88,6 +92,14 @@ public class VibeCoderWebViewViewModel : WebViewDockablePaneViewModel
                 SendToWeb(new { type = "error", message = ex.Message });
             }
         };
+    }
+
+    public void UpdateBaseUri(Uri baseUri)
+    {
+        if (_webView != null && baseUri != null)
+        {
+            _webView.Address = new Uri(baseUri, "index");
+        }
     }
 
     private async Task HandleSendMessage(JsonElement root)

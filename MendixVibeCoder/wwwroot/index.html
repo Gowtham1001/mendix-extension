@@ -119,6 +119,12 @@
                 <span class="hint">Maximum token count for chat history (older messages are trimmed)</span>
             </div>
 
+            <div class="setting-group">
+                <label for="setting-maxoutput">Max Output Tokens</label>
+                <input type="number" id="setting-maxoutput" min="256" max="32768" step="256" value="8192">
+                <span class="hint">Maximum tokens the AI can generate per response (lower if you get 400 errors)</span>
+            </div>
+
             <h3>MCP (Live Editing)</h3>
 
             <div class="setting-group">

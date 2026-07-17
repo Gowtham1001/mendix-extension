@@ -12,6 +12,7 @@ public class VibeCoderSettings
     public int SyncDelayMs { get; set; } = 800;
     public bool AutoExecuteMdl { get; set; } = true;
     public int MaxHistoryTokens { get; set; } = 120000;
+    public int MaxOutputTokens { get; set; } = 8192;
     public bool UseMcp { get; set; } = true;
     public int McpPort { get; set; } = 7782;
     public string McpDialAddress { get; set; } = "127.0.0.1";

@@ -45,56 +45,67 @@ public class VibeCoderWebViewViewModel : WebViewDockablePaneViewModel
             webView.Address = new Uri(_baseUri, "index");
         }
 
-        webView.MessageReceived += async (_, args) =>
+        webView.MessageReceived += (_, args) =>
         {
-            try
+            // Use Task.Run to safely handle async operations from the async void event handler.
+            // Exceptions thrown after the first await in async void propagate to the
+            // SynchronizationContext and can crash the host. Wrapping in Task.Run with a
+            // top-level catch ensures all exceptions are caught and sent to the UI.
+            _ = Task.Run(async () =>
             {
-                var message = args.Message;
-
-                switch (message)
+                try
                 {
-                    case "sendMessage":
-                        await HandleSendMessage(args.Data);
-                        break;
-                    case "getSettings":
-                        HandleGetSettings();
-                        break;
-                    case "saveSettings":
-                        HandleSaveSettings(args.Data);
-                        break;
-                    case "testMxcli":
-                        await HandleTestMxcli();
-                        break;
-                    case "testOpenRouter":
-                        await HandleTestOpenRouter();
-                        break;
-                    case "fetchContext":
-                        await HandleFetchContext();
-                        break;
-                    case "executeMdl":
-                        await HandleExecuteMdl(args.Data);
-                        break;
-                    case "detectProject":
-                        HandleDetectProject();
-                        break;
-                    case "cancelStream":
-                        lock (_streamLock)
-                        {
-                            _streamCts?.Cancel();
-                        }
-                        break;
-                    case "confirmMdlExecution":
-                        await HandleConfirmMdlExecution(args.Data);
-                        break;
-                    case "checkMcp":
-                        await HandleCheckMcp();
-                        break;
+                    var message = args.Message;
+
+                    switch (message)
+                    {
+                        case "sendMessage":
+                            await HandleSendMessage(args.Data);
+                            break;
+                        case "getSettings":
+                            HandleGetSettings();
+                            break;
+                        case "saveSettings":
+                            HandleSaveSettings(args.Data);
+                            break;
+                        case "testMxcli":
+                            await HandleTestMxcli(args.Data);
+                            break;
+                        case "testOpenRouter":
+                            await HandleTestOpenRouter(args.Data);
+                            break;
+                        case "fetchContext":
+                            await HandleFetchContext();
+                            break;
+                        case "executeMdl":
+                            await HandleExecuteMdl(args.Data);
+                            break;
+                        case "detectProject":
+                            HandleDetectProject();
+                            break;
+                        case "cancelStream":
+                            lock (_streamLock)
+                            {
+                                _streamCts?.Cancel();
+                            }
+                            break;
+                        case "confirmMdlExecution":
+                            await HandleConfirmMdlExecution(args.Data);
+                            break;
+                        case "checkMcp":
+                            await HandleCheckMcp();
+                            break;
+                    }
                 }
-            }
-            catch (Exception ex)
-            {
-                SendToWeb(new { type = "error", message = ex.Message });
-            }
+                catch (OperationCanceledException)
+                {
+                    // Silently ignore cancellations — the user triggered a cancel.
+                }
+                catch (Exception ex)
+                {
+                    SendToWeb(new { type = "error", message = $"AI request failed: {ex.Message}" });
+                }
+            });
         };
     }
 
@@ -191,18 +202,13 @@ public class VibeCoderWebViewViewModel : WebViewDockablePaneViewModel
         }
         catch (OperationCanceledException)
         {
-            if (aiStartSent)
-            {
-                SendToWeb(new { type = "streamCancelled" });
-                SendToWeb(new { type = "aiDone", content = "", mdlCommandsFound = 0, mdlCommands = Array.Empty<string>() });
-            }
+            SendToWeb(new { type = "streamCancelled" });
+            SendToWeb(new { type = "aiDone", content = "", mdlCommandsFound = 0, mdlCommands = Array.Empty<string>() });
         }
         catch (Exception ex)
         {
-            lock (_chatHistoryLock)
-            {
-                _chatHistory.RemoveAll(m => m.Role == "user" && m.Content == userMessage);
-            }
+            // Do NOT remove the user message from history on error — keep it for context
+            // and so the user can see what they asked. Just send the error to the UI.
 
             if (aiStartSent)
             {
@@ -303,6 +309,7 @@ public class VibeCoderWebViewViewModel : WebViewDockablePaneViewModel
                 syncDelayMs = s.SyncDelayMs,
                 autoExecuteMdl = s.AutoExecuteMdl,
                 maxHistoryTokens = s.MaxHistoryTokens,
+                maxOutputTokens = s.MaxOutputTokens,
                 useMcp = s.UseMcp,
                 mcpPort = s.McpPort,
                 mcpDialAddress = s.McpDialAddress
@@ -333,6 +340,8 @@ public class VibeCoderWebViewViewModel : WebViewDockablePaneViewModel
                 s.AutoExecuteMdl = settings["autoExecuteMdl"]!.GetValue<bool>();
             if (settings["maxHistoryTokens"] != null)
                 s.MaxHistoryTokens = settings["maxHistoryTokens"]!.GetValue<int>();
+            if (settings["maxOutputTokens"] != null)
+                s.MaxOutputTokens = settings["maxOutputTokens"]!.GetValue<int>();
             if (settings["useMcp"] != null)
                 s.UseMcp = settings["useMcp"]!.GetValue<bool>();
             if (settings["mcpPort"] != null)
@@ -345,26 +354,62 @@ public class VibeCoderWebViewViewModel : WebViewDockablePaneViewModel
         SendToWeb(new { type = "settingsSaved", success = true });
     }
 
-    private async Task HandleTestMxcli()
+    private async Task HandleTestMxcli(JsonObject? data)
     {
-        var ok = await _mxcliRunner.TestConnectionAsync();
-        SendToWeb(new
+        try
         {
-            type = "mxcliTestResult",
-            success = ok,
-            message = ok ? "mxcli found and working" : "mxcli not found. Check the path in Settings."
-        });
+            var formPath = data?["mxcliPath"]?.GetValue<string>();
+            if (!string.IsNullOrWhiteSpace(formPath))
+            {
+                _settingsManager.Update(s => s.MxcliPath = formPath);
+            }
+
+            var ok = await _mxcliRunner.TestConnectionAsync();
+            SendToWeb(new
+            {
+                type = "mxcliTestResult",
+                success = ok,
+                message = ok ? "mxcli found and working" : "mxcli not found. Check the path in Settings."
+            });
+        }
+        catch (Exception ex)
+        {
+            SendToWeb(new
+            {
+                type = "mxcliTestResult",
+                success = false,
+                message = $"Test failed: {ex.Message}"
+            });
+        }
     }
 
-    private async Task HandleTestOpenRouter()
+    private async Task HandleTestOpenRouter(JsonObject? data)
     {
-        var result = await _openRouterClient.TestConnectionAsync();
-        SendToWeb(new
+        try
         {
-            type = "openRouterTestResult",
-            success = !result.Contains("failed"),
-            message = result
-        });
+            var formApiKey = data?["apiKey"]?.GetValue<string>();
+            if (!string.IsNullOrWhiteSpace(formApiKey))
+            {
+                _settingsManager.Update(s => s.OpenRouterApiKey = formApiKey);
+            }
+
+            var result = await _openRouterClient.TestConnectionAsync();
+            SendToWeb(new
+            {
+                type = "openRouterTestResult",
+                success = result.StartsWith("Connection successful"),
+                message = result
+            });
+        }
+        catch (Exception ex)
+        {
+            SendToWeb(new
+            {
+                type = "openRouterTestResult",
+                success = false,
+                message = $"Test failed: {ex.Message}"
+            });
+        }
     }
 
     private async Task HandleCheckMcp()

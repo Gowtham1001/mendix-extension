@@ -24,28 +24,55 @@
     let pendingMdlCommands = null;
 
     // --- WebView bridge (works in Studio Pro) ---
-    function postMessage(message, data) {
-        try {
-            if (window.chrome && window.chrome.webview && window.chrome.webview.postMessage) {
-                window.chrome.webview.postMessage({ message, data });
-            }
-        } catch (e) { /* extension not active */ }
+    // Only set up the mock when chrome.webview is truly absent (not in WebView2).
+    // In Studio Pro, WebView2 injects chrome.webview before page scripts run.
+    if (!window.chrome || !window.chrome.webview) {
+        window.chrome = window.chrome || {};
+        window.chrome.webview = {
+            postMessage: function (msg) {
+                console.log('[mock] postMessage:', msg);
+            },
+            addEventListener: function () {}
+        };
     }
 
-    window.chrome = window.chrome || {};
-    window.chrome.webview = window.chrome.webview || {
-        postMessage: function (msg) {
-            console.log('[mock] postMessage:', msg);
+    function postMessage(message, data) {
+        try {
+            window.chrome.webview.postMessage({ message: message, data: data !== undefined ? data : null });
+        } catch (e) {
+            console.warn('[VibeCoder] postMessage failed:', e);
         }
-    };
+    }
 
     // --- Messages from C# ---
     function onMessage(event) {
         try {
-            const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+            var raw = event.data;
+            // Mendix IWebView.PostMessage(string message, object? data) delivers
+            // event.data as { message, data }. C# SendToWeb serializes the full
+            // response object to JSON and passes it as the 'message' string.
+            if (raw && typeof raw === 'object' && 'message' in raw) {
+                var msgStr = raw.message;
+                var payload = raw.data || {};
+                if (typeof msgStr === 'string') {
+                    try {
+                        var parsed = JSON.parse(msgStr);
+                        if (parsed && typeof parsed === 'object') {
+                            handleCsharpMessage(parsed);
+                            return;
+                        }
+                    } catch (_) {
+                        // Not JSON — treat as simple message type with data
+                        handleCsharpMessage(Object.assign({ type: msgStr }, payload));
+                        return;
+                    }
+                }
+            }
+            // Fallback for raw string delivery
+            var data = typeof raw === 'string' ? JSON.parse(raw) : raw;
             handleCsharpMessage(data);
         } catch (e) {
-            console.error('Failed to parse C# message:', e);
+            console.error('[VibeCoder] Failed to parse C# message:', e);
         }
     }
 
@@ -58,18 +85,23 @@
                     pendingRawText = '';
                     if (welcomeMsg) welcomeMsg.remove();
                     createAssistantMessage();
+                    showThinking();
                 }
                 break;
             case 'aiChunk':
+                hideThinking();
                 handleAiChunk(data.content);
                 break;
             case 'aiDone':
+                hideThinking();
                 handleAiDone(data.content, data.mdlCommandsFound, data.mdlCommands);
                 break;
             case 'streamCancelled':
+                hideThinking();
                 handleStreamCancelled();
                 break;
             case 'error':
+                hideThinking();
                 showError(data.message);
                 finishStreaming();
                 break;
@@ -119,12 +151,30 @@
             case 'mdlValidation':
                 handleMdlValidation(data.valid, data.errors);
                 break;
+            default:
+                console.warn('[VibeCoder] Unknown message type:', data.type, data);
         }
+    }
+
+    // --- Thinking Indicator ---
+    function showThinking() {
+        var existing = chatMessages.querySelector('.thinking-indicator');
+        if (existing) return;
+        var div = document.createElement('div');
+        div.className = 'thinking-indicator';
+        div.innerHTML = '<span class="thinking-dot"></span><span class="thinking-dot"></span><span class="thinking-dot"></span>';
+        chatMessages.appendChild(div);
+        scrollToBottom();
+    }
+
+    function hideThinking() {
+        var el = chatMessages.querySelector('.thinking-indicator');
+        if (el) el.remove();
     }
 
     // --- Error Display ---
     function showError(message) {
-        const div = document.createElement('div');
+        var div = document.createElement('div');
         div.className = 'message error';
         div.textContent = message;
         chatMessages.appendChild(div);
@@ -141,11 +191,11 @@
             createAssistantMessage();
         }
 
-        const last = chatMessages.querySelector('.message.assistant:last-child');
+        var last = chatMessages.querySelector('.message.assistant:last-child');
         if (last) {
-            const contentEl = last.querySelector('.message-content') || last;
+            var contentEl = last.querySelector('.message-content') || last;
             pendingRawText += content;
-            const openFences = (pendingRawText.match(/```/g) || []).length % 2 === 1;
+            var openFences = (pendingRawText.match(/```/g) || []).length % 2 === 1;
             if (!openFences) {
                 contentEl.innerHTML = renderMarkdown(pendingRawText);
             }
@@ -155,12 +205,12 @@
     }
 
     function handleAiDone(content, mdlCount, mdlCommands) {
-        const last = chatMessages.querySelector('.message.assistant:last-child');
+        var last = chatMessages.querySelector('.message.assistant:last-child');
         if (last) {
-            const contentEl = last.querySelector('.message-content') || last;
+            var contentEl = last.querySelector('.message-content') || last;
             contentEl.innerHTML = renderMarkdown(pendingRawText);
             if (mdlCount > 0) {
-                const mdlInfo = document.createElement('div');
+                var mdlInfo = document.createElement('div');
                 mdlInfo.className = 'mdl-inline-info';
                 mdlInfo.textContent = '[' + mdlCount + ' MDL command' + (mdlCount > 1 ? 's' : '') + ' detected]';
                 last.appendChild(mdlInfo);
@@ -170,9 +220,9 @@
     }
 
     function handleStreamCancelled() {
-        const last = chatMessages.querySelector('.message.assistant:last-child');
+        var last = chatMessages.querySelector('.message.assistant:last-child');
         if (last) {
-            const contentEl = last.querySelector('.message-content') || last;
+            var contentEl = last.querySelector('.message-content') || last;
             contentEl.innerHTML = renderMarkdown(pendingRawText);
         }
         finishStreaming();
@@ -188,13 +238,13 @@
     }
 
     function createAssistantMessage() {
-        const div = document.createElement('div');
+        var div = document.createElement('div');
         div.className = 'message assistant';
         chatMessages.appendChild(div);
     }
 
     function renderMarkdown(text) {
-        let html = escapeHtml(text);
+        var html = escapeHtml(text);
 
         // Code blocks
         html = html.replace(/```(\w*)\n?([\s\S]*?)```/g, function (_, lang, code) {
@@ -234,12 +284,12 @@
     }
 
     function sendUserMessage() {
-        const text = chatInput.value.trim();
+        var text = chatInput.value.trim();
         if (!text || isStreaming) return;
 
         if (welcomeMsg) welcomeMsg.remove();
 
-        const div = document.createElement('div');
+        var div = document.createElement('div');
         div.className = 'message user';
         div.textContent = text;
         chatMessages.appendChild(div);
@@ -256,7 +306,7 @@
 
     // --- MDL Inline Display ---
     function handleMdlExecuting(command) {
-        const block = document.createElement('div');
+        var block = document.createElement('div');
         block.className = 'mdl-block mdl-executing';
         block.dataset.command = command;
         block.innerHTML =
@@ -268,15 +318,15 @@
     }
 
     function handleMdlResult(command, success, output, error) {
-        const blocks = chatMessages.querySelectorAll('.mdl-block');
-        let target = null;
+        var blocks = chatMessages.querySelectorAll('.mdl-block');
+        var target = null;
         blocks.forEach(function (b) { if (b.dataset.command === command) target = b; });
         if (!target) return;
 
         target.classList.remove('mdl-executing');
         target.classList.add(success ? 'mdl-success' : 'mdl-error');
 
-        const statusEl = target.querySelector('.mdl-status');
+        var statusEl = target.querySelector('.mdl-status');
         if (statusEl) {
             statusEl.classList.remove('executing');
             statusEl.classList.add(success ? 'success' : 'error');
@@ -289,15 +339,15 @@
     // --- MDL Confirmation Dialog ---
     function showMdlConfirmationDialog(commands) {
         pendingMdlCommands = commands;
-        const overlay = $('#mdl-confirm-overlay');
-        const countEl = $('#mdl-confirm-count');
-        const commandsEl = $('#mdl-confirm-commands');
+        var overlay = $('#mdl-confirm-overlay');
+        var countEl = $('#mdl-confirm-count');
+        var commandsEl = $('#mdl-confirm-commands');
 
         countEl.textContent = commands.length + ' command' + (commands.length > 1 ? 's' : '');
         commandsEl.innerHTML = '';
 
         commands.forEach(function (cmd, i) {
-            const item = document.createElement('div');
+            var item = document.createElement('div');
             item.className = 'mdl-command-item';
             item.innerHTML =
                 '<div class="mdl-command-label">Command ' + (i + 1) + '</div>' +
@@ -371,6 +421,7 @@
         $('#setting-autoexecute').checked = s.autoExecuteMdl;
         $('#setting-syncdelay').value = s.syncDelayMs || 800;
         $('#setting-maxhistory').value = s.maxHistoryTokens || 120000;
+        $('#setting-maxoutput').value = s.maxOutputTokens || 8192;
         $('#setting-usemcp').checked = s.useMcp;
         $('#setting-mcppart').value = s.mcpPort || 7782;
         $('#setting-mcpdial').value = s.mcpDialAddress || '127.0.0.1';
@@ -387,6 +438,7 @@
                 autoExecuteMdl: $('#setting-autoexecute').checked,
                 syncDelayMs: parseInt($('#setting-syncdelay').value) || 800,
                 maxHistoryTokens: parseInt($('#setting-maxhistory').value) || 120000,
+                maxOutputTokens: parseInt($('#setting-maxoutput').value) || 8192,
                 useMcp: $('#setting-usemcp').checked,
                 mcpPort: parseInt($('#setting-mcppart').value) || 7782,
                 mcpDialAddress: $('#setting-mcpdial').value || '127.0.0.1'
@@ -395,10 +447,10 @@
     }
 
     function showTestStatus(sel, success, message, loading) {
-        const el = $(sel);
+        var el = $(sel);
         el.textContent = message;
         el.className = 'test-status ' + (loading ? 'loading' : (success ? 'pass' : 'fail'));
-        setTimeout(function () { el.textContent = ''; }, 5000);
+        setTimeout(function () { el.textContent = ''; el.className = 'test-status'; }, 5000);
     }
 
     // --- View Switching ---
@@ -441,12 +493,12 @@
 
     btnTestMxcli.addEventListener('click', function () {
         showTestStatus('#mxcli-test-status', null, 'Testing...', true);
-        postMessage('testMxcli', null);
+        postMessage('testMxcli', { mxcliPath: $('#setting-mxcli').value });
     });
 
     btnTestOpenRouter.addEventListener('click', function () {
         showTestStatus('#openrouter-test-status', null, 'Testing...', true);
-        postMessage('testOpenRouter', null);
+        postMessage('testOpenRouter', { apiKey: $('#setting-apikey').value });
     });
 
     btnCheckMcp.addEventListener('click', function () {
@@ -459,7 +511,12 @@
     });
 
     // --- Init ---
+    // Register the message handler FIRST, then signal readiness per Mendix PostMessage API docs.
+    // Messages from C# are queued until MessageListenerRegistered is sent.
     window.chrome.webview.addEventListener('message', onMessage);
+    window.chrome.webview.postMessage({ message: 'MessageListenerRegistered' });
+
+    // Now safe to send initial messages — C# queue will deliver them after JS is ready.
     postMessage('detectProject', null);
     postMessage('checkMcp', null);
 })();

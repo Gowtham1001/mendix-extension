@@ -338,7 +338,8 @@ public class OpenRouterClient
         {
             Model = settings.ModelId,
             Messages = allMessages,
-            Stream = true
+            Stream = true,
+            MaxTokens = settings.MaxOutputTokens
         };
 
         await foreach (var chunk in StreamChatCoreAsync(request, settings.OpenRouterApiKey, ct))
@@ -413,6 +414,17 @@ public class OpenRouterClient
                 var statusCode = response.StatusCode;
                 var errorBody = await response.Content.ReadAsStringAsync(ct);
                 var errorMsg = ExtractErrorMessage(errorBody, statusCode);
+
+                // Provide actionable guidance for common errors
+                if (statusCode == System.Net.HttpStatusCode.BadRequest)
+                {
+                    errorMsg = $"Bad Request (400): {errorMsg}. " +
+                               "This usually means the request is invalid — check your model ID, " +
+                               "API key, or that the total context (system prompt + history) " +
+                               "does not exceed the model's context window. " +
+                               "Try reducing Max History Tokens in Settings.";
+                }
+
                 response.Dispose();
                 return new StreamingRequestResult
                 {

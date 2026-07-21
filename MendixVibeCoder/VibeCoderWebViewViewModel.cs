@@ -20,6 +20,7 @@ public class VibeCoderWebViewViewModel : WebViewDockablePaneViewModel
     private readonly object _streamLock = new();
     private string? _projectContext;
     private CancellationTokenSource? _streamCts;
+    private SynchronizationContext? _uiContext;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -39,6 +40,7 @@ public class VibeCoderWebViewViewModel : WebViewDockablePaneViewModel
     public override void InitWebView(IWebView webView)
     {
         _webView = webView;
+        _uiContext = SynchronizationContext.Current;
 
         if (_baseUri != null)
         {
@@ -753,6 +755,13 @@ public class VibeCoderWebViewViewModel : WebViewDockablePaneViewModel
     private void SendToWeb(object data)
     {
         var json = JsonSerializer.Serialize(data, JsonOptions);
-        _webView?.PostMessage(json);
+        if (_uiContext != null)
+        {
+            _uiContext.Post(_ => _webView?.PostMessage(json), null);
+        }
+        else
+        {
+            _webView?.PostMessage(json);
+        }
     }
 }

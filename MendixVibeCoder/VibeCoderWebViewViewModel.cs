@@ -329,7 +329,7 @@ public class VibeCoderWebViewViewModel : WebViewDockablePaneViewModel
             if (settings["openRouterApiKey"] != null)
                 s.OpenRouterApiKey = settings["openRouterApiKey"]!.GetValue<string>() ?? "";
             if (settings["modelId"] != null)
-                s.ModelId = settings["modelId"]!.GetValue<string>() ?? "anthropic/claude-sonnet-4-20250514";
+                s.ModelId = settings["modelId"]!.GetValue<string>() ?? "google/gemma-4-31b-it:free";
             if (settings["mxcliPath"] != null)
                 s.MxcliPath = settings["mxcliPath"]!.GetValue<string>() ?? "mxcli";
             if (settings["autoSync"] != null)
@@ -389,7 +389,7 @@ public class VibeCoderWebViewViewModel : WebViewDockablePaneViewModel
     {
         try
         {
-            var formApiKey = data?["apiKey"]?.GetValue<string>();
+            var formApiKey = data?["apiKey"]?.GetValue<string>()?.Trim();
             if (!string.IsNullOrWhiteSpace(formApiKey))
             {
                 _settingsManager.Update(s => s.OpenRouterApiKey = formApiKey);

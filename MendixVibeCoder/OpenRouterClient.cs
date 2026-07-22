@@ -67,7 +67,10 @@ public class OpenRouterClient
     private const string API_URL = "https://openrouter.ai/api/v1/chat/completions";
     private const int MAX_RETRIES = 3;
 
-    private static readonly HttpClient HttpClient = new()
+    private static readonly HttpClient HttpClient = new(new HttpClientHandler
+    {
+        AllowAutoRedirect = false
+    })
     {
         Timeout = TimeSpan.FromMinutes(5)
     };
@@ -316,8 +319,9 @@ public class OpenRouterClient
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
     {
         var settings = _settings.Get();
+        var apiKey = settings.OpenRouterApiKey?.Trim();
 
-        if (string.IsNullOrWhiteSpace(settings.OpenRouterApiKey))
+        if (string.IsNullOrWhiteSpace(apiKey))
         {
             yield return "[ERROR] OpenRouter API key not configured. Open Settings to configure.";
             yield break;
@@ -342,7 +346,7 @@ public class OpenRouterClient
             MaxTokens = settings.MaxOutputTokens
         };
 
-        await foreach (var chunk in StreamChatCoreAsync(request, settings.OpenRouterApiKey, ct))
+        await foreach (var chunk in StreamChatCoreAsync(request, apiKey, ct))
         {
             yield return chunk;
         }
@@ -403,9 +407,7 @@ public class OpenRouterClient
             {
                 Content = JsonContent.Create(request)
             };
-            httpRequest.Headers.Add("Authorization", $"Bearer {apiKey}");
-            httpRequest.Headers.Add("HTTP-Referer", "https://github.com/mendix-vibe-coder");
-            httpRequest.Headers.Add("X-Title", "MendixVibeCoder");
+            httpRequest.Headers.TryAddWithoutValidation("Authorization", $"Bearer {apiKey}");
 
             response = await HttpClient.SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead, ct);
 
@@ -533,7 +535,8 @@ public class OpenRouterClient
     public async Task<string> TestConnectionAsync(CancellationToken ct = default)
     {
         var settings = _settings.Get();
-        if (string.IsNullOrWhiteSpace(settings.OpenRouterApiKey))
+        var apiKey = settings.OpenRouterApiKey?.Trim();
+        if (string.IsNullOrWhiteSpace(apiKey))
             return "API key not configured";
 
         try

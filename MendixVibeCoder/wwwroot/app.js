@@ -414,7 +414,7 @@
     // --- Settings ---
     function populateSettings(s) {
         $('#setting-apikey').value = s.openRouterApiKey || '';
-        $('#setting-model').value = s.modelId || 'anthropic/claude-sonnet-4-20250514';
+        $('#setting-model').value = s.modelId || 'google/gemma-4-31b-it:free';
         $('#setting-mxcli').value = s.mxcliPath || 'mxcli';
         $('#setting-autosync').checked = s.autoSync;
         $('#setting-autocontext').checked = s.autoFetchContext;
@@ -498,7 +498,7 @@
 
     btnTestOpenRouter.addEventListener('click', function () {
         showTestStatus('#openrouter-test-status', null, 'Testing...', true);
-        postMessage('testOpenRouter', { apiKey: $('#setting-apikey').value });
+        postMessage('testOpenRouter', { apiKey: $('#setting-apikey').value.trim() });
     });
 
     btnCheckMcp.addEventListener('click', function () {

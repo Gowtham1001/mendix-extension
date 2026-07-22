@@ -246,6 +246,7 @@ public class VibeCoderWebViewViewModel : WebViewDockablePaneViewModel
             CancellationToken ct;
             lock (_streamLock)
             {
+                _streamCts?.Cancel();
                 _streamCts?.Dispose();
                 _streamCts = new CancellationTokenSource();
                 ct = _streamCts.Token;

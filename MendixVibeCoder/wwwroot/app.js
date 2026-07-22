@@ -414,7 +414,7 @@
     // --- Settings ---
     function populateSettings(s) {
         $('#setting-apikey').value = s.openRouterApiKey || '';
-        $('#setting-model').value = s.modelId || 'nvidia/nemotron-nano-9b-v2:free';
+        $('#setting-model').value = s.modelId || 'cohere/north-mini-code:free';
         $('#setting-mxcli').value = s.mxcliPath || 'mxcli';
         $('#setting-autosync').checked = s.autoSync;
         $('#setting-autocontext').checked = s.autoFetchContext;

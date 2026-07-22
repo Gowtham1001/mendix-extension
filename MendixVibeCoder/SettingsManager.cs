@@ -5,7 +5,7 @@ namespace MendixVibeCoder;
 public class VibeCoderSettings
 {
     public string OpenRouterApiKey { get; set; } = "";
-    public string ModelId { get; set; } = "nvidia/nemotron-nano-9b-v2:free";
+    public string ModelId { get; set; } = "cohere/north-mini-code:free";
     public string MxcliPath { get; set; } = "mxcli";
     public bool AutoSync { get; set; } = true;
     public bool AutoFetchContext { get; set; } = true;

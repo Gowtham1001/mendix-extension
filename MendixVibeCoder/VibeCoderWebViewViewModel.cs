@@ -391,10 +391,14 @@ public class VibeCoderWebViewViewModel : WebViewDockablePaneViewModel
         try
         {
             var formApiKey = data?["apiKey"]?.GetValue<string>()?.Trim();
-            if (!string.IsNullOrWhiteSpace(formApiKey))
+            var formModelId = data?["modelId"]?.GetValue<string>()?.Trim();
+            _settingsManager.Update(s =>
             {
-                _settingsManager.Update(s => s.OpenRouterApiKey = formApiKey);
-            }
+                if (!string.IsNullOrWhiteSpace(formApiKey))
+                    s.OpenRouterApiKey = formApiKey;
+                if (!string.IsNullOrWhiteSpace(formModelId))
+                    s.ModelId = formModelId;
+            });
 
             var result = await _openRouterClient.TestConnectionAsync();
             SendToWeb(new

@@ -498,7 +498,10 @@
 
     btnTestOpenRouter.addEventListener('click', function () {
         showTestStatus('#openrouter-test-status', null, 'Testing...', true);
-        postMessage('testOpenRouter', { apiKey: $('#setting-apikey').value.trim() });
+        postMessage('testOpenRouter', {
+            apiKey: $('#setting-apikey').value.trim(),
+            modelId: $('#setting-model').value.trim()
+        });
     });
 
     btnCheckMcp.addEventListener('click', function () {

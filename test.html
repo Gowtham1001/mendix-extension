@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vibe Coder - Browser Test</title>
+    <style>
+        :root {
+            --bg-primary: #1e1e1e;
+            --bg-secondary: #252526;
+            --bg-tertiary: #2d2d2d;
+            --bg-hover: #3c3c3c;
+            --text-primary: #cccccc;
+            --text-secondary: #858585;
+            --text-muted: #5a5a5a;
+            --accent: #0078d4;
+            --green: #4ec9b0;
+            --red: #f44747;
+            --orange: #e8a838;
+            --border: #3c3c3c;
+            --radius: 4px;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', -apple-system, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            font-size: 13px;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        .topbar {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 8px 16px; background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border);
+        }
+        .topbar h3 { font-size: 14px; font-weight: 600; }
+        .badge { font-size: 10px; padding: 2px 8px; border-radius: 8px; background: var(--orange); color: #000; }
+        .settings-bar {
+            display: flex; gap: 8px; align-items: center;
+            padding: 8px 16px; background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border); flex-wrap: wrap;
+        }
+        .settings-bar label { font-size: 11px; color: var(--text-secondary); }
+        .settings-bar input {
+            background: var(--bg-tertiary); border: 1px solid var(--border);
+            color: var(--text-primary); padding: 4px 8px; border-radius: var(--radius);
+            font-size: 12px; outline: none;
+        }
+        .settings-bar input:focus { border-color: var(--accent); }
+        .settings-bar input[type="password"] { width: 220px; }
+        .settings-bar input[type="text"] { width: 260px; }
+        .btn {
+            background: var(--accent); color: #fff; border: none;
+            padding: 4px 12px; border-radius: var(--radius); cursor: pointer;
+            font-size: 11px;
+        }
+        .btn:hover { opacity: 0.9; }
+        .btn-danger { background: var(--red); }
+        .btn-secondary { background: var(--bg-tertiary); color: var(--text-secondary); border: 1px solid var(--border); }
+        .chat-messages {
+            flex: 1; overflow-y: auto; padding: 16px;
+        }
+        .message {
+            margin-bottom: 12px; padding: 8px 12px; border-radius: var(--radius);
+            line-height: 1.5; word-wrap: break-word; white-space: pre-wrap;
+        }
+        .message.user { background: var(--bg-tertiary); border-left: 3px solid var(--accent); }
+        .message.assistant { background: var(--bg-secondary); border-left: 3px solid var(--green); }
+        .message.error { background: #2d1b1b; border-left: 3px solid var(--red); color: var(--red); }
+        .message pre {
+            background: var(--bg-primary); border: 1px solid var(--border);
+            border-radius: var(--radius); padding: 8px; margin: 6px 0;
+            overflow-x: auto; font-family: 'Consolas', monospace; font-size: 12px;
+        }
+        .message code {
+            font-family: 'Consolas', monospace; background: var(--bg-primary);
+            padding: 1px 4px; border-radius: 3px; font-size: 12px;
+        }
+        .message pre code { background: none; padding: 0; }
+        .chat-input-area {
+            padding: 8px 16px 16px; border-top: 1px solid var(--border);
+        }
+        .input-wrapper {
+            display: flex; align-items: flex-end; background: var(--bg-tertiary);
+            border: 1px solid var(--border); border-radius: var(--radius); padding: 2px;
+        }
+        .input-wrapper:focus-within { border-color: var(--accent); }
+        #chat-input {
+            flex: 1; background: none; border: none; color: var(--text-primary);
+            font-family: 'Segoe UI', sans-serif; font-size: 13px;
+            padding: 6px 8px; resize: none; outline: none; max-height: 120px;
+        }
+        .send-btn {
+            background: var(--accent); border: none; color: #fff;
+            width: 28px; height: 28px; border-radius: var(--radius);
+            cursor: pointer; font-size: 14px; flex-shrink: 0;
+        }
+        .log {
+            font-size: 10px; color: var(--text-muted); padding: 4px 8px;
+            border-top: 1px solid var(--border); max-height: 80px; overflow-y: auto;
+            font-family: 'Consolas', monospace; background: var(--bg-secondary);
+        }
+        .log .ok { color: var(--green); }
+        .log .err { color: var(--red); }
+        .log .info { color: var(--accent); }
+        .thinking { color: var(--text-muted); font-style: italic; padding: 8px 12px; }
+    </style>
+</head>
+<body>
+    <div class="topbar">
+        <div style="display:flex;align-items:center;gap:8px">
+            <h3>Vibe Coder - Browser Test</h3>
+            <span class="badge">No Mendix Required</span>
+        </div>
+        <button class="btn btn-secondary" onclick="clearChat()">Clear</button>
+    </div>
+    <div class="settings-bar">
+        <label>API Key:</label>
+        <input type="password" id="apikey" placeholder="sk-or-v1-...">
+        <label>Model:</label>
+        <input type="text" id="modelid" value="google/gemma-4-31b-it:free">
+        <button class="btn" onclick="testConnection()">Test</button>
+        <span id="test-status" style="font-size:11px"></span>
+    </div>
+    <div class="chat-messages" id="chat-messages">
+        <div class="message assistant" style="border-left-color:var(--accent)">
+            <strong>Browser Test Mode</strong><br><br>
+            This tests the OpenRouter API directly from your browser (no Mendix needed).<br><br>
+            1. Enter your OpenRouter API key<br>
+            2. Pick a model (default: free google/gemma-4-31b-it:free)<br>
+            3. Click Test to verify the connection<br>
+            4. Start chatting to test streaming responses<br><br>
+            <em style="color:var(--text-muted)">Note: CORS is enabled on OpenRouter, so browser requests work.</em>
+        </div>
+    </div>
+    <div class="chat-input-area">
+        <div class="input-wrapper">
+            <textarea id="chat-input" placeholder="Type a message..." rows="1"></textarea>
+            <button class="send-btn" id="btn-send" onclick="sendMessage()">&#x27A4;</button>
+        </div>
+    </div>
+    <div class="log" id="log"></div>
+
+    <script>
+        const chatMessages = document.getElementById('chat-messages');
+        const chatInput = document.getElementById('chat-input');
+        const logEl = document.getElementById('log');
+        let isStreaming = false;
+        let abortController = null;
+
+        function log(msg, cls) {
+            const span = document.createElement('span');
+            span.className = cls || '';
+            span.textContent = '[' + new Date().toLocaleTimeString() + '] ' + msg + '\n';
+            logEl.appendChild(span);
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+
+        function scrollToBottom() {
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        function escapeHtml(str) {
+            return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        }
+
+        function renderMarkdown(text) {
+            var html = escapeHtml(text);
+            html = html.replace(/```(\w*)\n?([\s\S]*?)```/g, function (_, lang, code) {
+                return '<pre><code class="language-' + lang + '">' + code.trim() + '</code></pre>';
+            });
+            html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+            html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+            html = html.replace(/\n/g, '<br>');
+            return html;
+        }
+
+        async function testConnection() {
+            const apiKey = document.getElementById('apikey').value.trim();
+            const modelId = document.getElementById('modelid').value.trim();
+            const status = document.getElementById('test-status');
+
+            if (!apiKey) { status.textContent = 'Enter API key first'; status.style.color = 'var(--red)'; return; }
+
+            status.textContent = 'Testing...'; status.style.color = 'var(--orange)';
+            log('Testing connection with model: ' + modelId, 'info');
+
+            try {
+                const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer ' + apiKey
+                    },
+                    body: JSON.stringify({
+                        model: modelId,
+                        messages: [{ role: 'user', content: 'Say ok' }],
+                        max_tokens: 10,
+                        stream: false
+                    })
+                });
+
+                const data = await res.json();
+
+                if (!res.ok) {
+                    const errMsg = data?.error?.message || 'HTTP ' + res.status;
+                    status.textContent = 'Failed: ' + errMsg; status.style.color = 'var(--red)';
+                    log('Test FAILED: ' + errMsg, 'err');
+                    return;
+                }
+
+                const reply = data?.choices?.[0]?.message?.content || '(empty)';
+                status.textContent = 'OK: ' + reply.trim(); status.style.color = 'var(--green)';
+                log('Test OK - Model: ' + (data?.model || modelId) + ' - Reply: ' + reply.trim(), 'ok');
+            } catch (e) {
+                status.textContent = 'Error: ' + e.message; status.style.color = 'var(--red)';
+                log('Test ERROR: ' + e.message, 'err');
+            }
+        }
+
+        async function sendMessage() {
+            const text = chatInput.value.trim();
+            if (!text || isStreaming) return;
+
+            const apiKey = document.getElementById('apikey').value.trim();
+            const modelId = document.getElementById('modelid').value.trim();
+
+            if (!apiKey) {
+                appendMessage('error', 'Enter your OpenRouter API key in the settings bar above.');
+                return;
+            }
+
+            // User message
+            appendMessage('user', text);
+            chatInput.value = '';
+            chatInput.style.height = 'auto';
+            isStreaming = true;
+
+            // Thinking indicator
+            const thinking = document.createElement('div');
+            thinking.className = 'thinking';
+            thinking.textContent = 'Thinking...';
+            chatMessages.appendChild(thinking);
+            scrollToBottom();
+
+            log('Sending to ' + modelId + ' (' + text.length + ' chars)', 'info');
+
+            const assistantDiv = document.createElement('div');
+            assistantDiv.className = 'message assistant';
+            let fullText = '';
+
+            abortController = new AbortController();
+
+            try {
+                const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer ' + apiKey
+                    },
+                    body: JSON.stringify({
+                        model: modelId,
+                        messages: [{ role: 'user', content: text }],
+                        stream: true,
+                        max_tokens: 8192,
+                        temperature: 0.1
+                    }),
+                    signal: abortController.signal
+                });
+
+                if (!res.ok) {
+                    const errData = await res.json().catch(() => ({}));
+                    const errMsg = errData?.error?.message || 'HTTP ' + res.status;
+                    thinking.remove();
+                    appendMessage('error', 'API Error (' + res.status + '): ' + errMsg);
+                    log('API Error: ' + errMsg, 'err');
+                    isStreaming = false;
+                    return;
+                }
+
+                thinking.remove();
+                chatMessages.appendChild(assistantDiv);
+                scrollToBottom();
+
+                const reader = res.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop();
+
+                    for (const line of lines) {
+                        if (!line.startsWith('data: ')) continue;
+                        const data = line.slice(6);
+                        if (data === '[DONE]') break;
+
+                        try {
+                            const chunk = JSON.parse(data);
+                            const content = chunk?.choices?.[0]?.delta?.content;
+                            if (content) {
+                                fullText += content;
+                                assistantDiv.innerHTML = renderMarkdown(fullText);
+                                scrollToBottom();
+                            }
+                            if (chunk?.error) {
+                                log('Stream error: ' + (chunk.error.message || 'unknown'), 'err');
+                            }
+                        } catch (_) {}
+                    }
+                }
+
+                log('Response complete (' + fullText.length + ' chars)', 'ok');
+
+            } catch (e) {
+                if (e.name === 'AbortError') {
+                    thinking.remove();
+                    if (fullText) {
+                        assistantDiv.innerHTML = renderMarkdown(fullText);
+                    } else {
+                        appendMessage('assistant', '(cancelled)');
+                    }
+                    log('Stream cancelled', 'info');
+                } else {
+                    thinking.remove();
+                    appendMessage('error', 'Request failed: ' + e.message);
+                    log('Error: ' + e.message, 'err');
+                }
+            } finally {
+                isStreaming = false;
+                abortController = null;
+            }
+        }
+
+        function appendMessage(type, text) {
+            const div = document.createElement('div');
+            div.className = 'message ' + type;
+            div.textContent = text;
+            chatMessages.appendChild(div);
+            scrollToBottom();
+        }
+
+        function clearChat() {
+            chatMessages.innerHTML = '';
+            log('Chat cleared', 'info');
+        }
+
+        chatInput.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
+
+        log('Ready. Enter API key and start testing.', 'ok');
+    </script>
+</body>
+</html>

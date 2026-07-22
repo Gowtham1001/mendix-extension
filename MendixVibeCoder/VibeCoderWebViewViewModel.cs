@@ -330,7 +330,7 @@ public class VibeCoderWebViewViewModel : WebViewDockablePaneViewModel
             if (settings["openRouterApiKey"] != null)
                 s.OpenRouterApiKey = settings["openRouterApiKey"]!.GetValue<string>() ?? "";
             if (settings["modelId"] != null)
-                s.ModelId = settings["modelId"]!.GetValue<string>() ?? "openrouter/free";
+                s.ModelId = settings["modelId"]!.GetValue<string>() ?? "nvidia/nemotron-nano-9b-v2:free";
             if (settings["mxcliPath"] != null)
                 s.MxcliPath = settings["mxcliPath"]!.GetValue<string>() ?? "mxcli";
             if (settings["autoSync"] != null)

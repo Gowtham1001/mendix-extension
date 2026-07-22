@@ -414,7 +414,7 @@
     // --- Settings ---
     function populateSettings(s) {
         $('#setting-apikey').value = s.openRouterApiKey || '';
-        $('#setting-model').value = s.modelId || 'google/gemma-4-31b-it:free';
+        $('#setting-model').value = s.modelId || 'openrouter/free';
         $('#setting-mxcli').value = s.mxcliPath || 'mxcli';
         $('#setting-autosync').checked = s.autoSync;
         $('#setting-autocontext').checked = s.autoFetchContext;
